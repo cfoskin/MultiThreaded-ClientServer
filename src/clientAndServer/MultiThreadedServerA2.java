@@ -1,8 +1,5 @@
 package clientAndServer;
 
-/*
- Multithreaded version of Area of Circle Client/Server programme
- */
 import java.io.*;
 import java.net.*;
 import java.sql.Connection;
@@ -10,13 +7,17 @@ import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.util.*;
-import java.awt.*;
 import javax.swing.*;
-
 import gui.ServerGui;
-
 import java.util.Date;
+
+/**
+ * 
+ * @author colum Foskin - 20062042 - assignment 02 Multithreaded version of Area
+ *         of Circle Client/Server programme This class is the server which
+ *         recieves the account number and radius from multiple clients, a new
+ *         thread is spawned for each client connection.
+ */
 
 public class MultiThreadedServerA2 {
 	// Text area for displaying contents
@@ -26,7 +27,7 @@ public class MultiThreadedServerA2 {
 	ServerGui serverGui;
 	private String firstName;
 	private String lastName;
-	private String accountNum;
+	private String resultForClient = "";
 
 	public static void main(String[] args) {
 		new MultiThreadedServerA2();
@@ -34,7 +35,7 @@ public class MultiThreadedServerA2 {
 
 	public MultiThreadedServerA2() {
 		serverGui = new ServerGui();
-		connectToDb();
+		connectToDb();// connect to db on start
 		try {
 			// Create a server socket
 			ServerSocket serverSocket = new ServerSocket(8000);
@@ -51,7 +52,7 @@ public class MultiThreadedServerA2 {
 	} // End Server Construct
 
 	/**
-	 * connect to the database
+	 * connect to the database on start up
 	 */
 	public Connection connectToDb() {
 		try {
@@ -64,6 +65,13 @@ public class MultiThreadedServerA2 {
 		return con;
 	}
 
+	/**
+	 * Check if a client is registered on the system, using their supplied
+	 * account number
+	 * 
+	 * @param accountNumber
+	 * @return true or false depending on the result of the query
+	 */
 	private boolean checkIfApplicantRegistered(int accountNumber) {
 		boolean result = false;
 		try {
@@ -73,23 +81,12 @@ public class MultiThreadedServerA2 {
 			if (rs.first()) {
 				firstName = rs.getString("FirstName");
 				lastName = rs.getString("LastName");
-				accountNum = rs.getString("AccountNum");
 				result = true;
 			}
 		} catch (SQLException e) {
 			infoBox("Error querying database", "Warning!");
 		}
 		return result;
-	}
-
-	/**
-	 * Info box to alert the user to different messages
-	 * 
-	 * @param infoMessage
-	 * @param titleBar
-	 */
-	private void infoBox(String infoMessage, String titleBar) {
-		JOptionPane.showMessageDialog(null, infoMessage, "InfoBox: " + titleBar, JOptionPane.INFORMATION_MESSAGE);
 	}
 
 	private class myClient extends Thread {
@@ -105,38 +102,74 @@ public class MultiThreadedServerA2 {
 		public myClient(Socket socket) throws IOException {
 			// Create data input and output streams
 			inputFromClient = new DataInputStream(socket.getInputStream());
-			Double accountNumberAsDouble = inputFromClient.readDouble();
-			int accountNumber = accountNumberAsDouble.intValue();
-
-			if (checkIfApplicantRegistered(accountNumber)) {
-				serverGui.jta.append("Welcome " + firstName + " " + lastName + "\n");
-				outputToClient = new DataOutputStream(socket.getOutputStream());
-				inetAddress = socket.getInetAddress();
-				serverGui.jta.append("Client's host name is " + inetAddress.getHostName() + "\n");
-				serverGui.jta.append("Client's IP Address is " + inetAddress.getHostAddress() + "\n");
-			} else {
-				infoBox("Sorry you are not registered!", "Warning");
-			}
+			outputToClient = new DataOutputStream(socket.getOutputStream());
+			// getting the inet address from the socket
+			inetAddress = socket.getInetAddress();
+			serverGui.jta.append("Client's host name is " + inetAddress.getHostName() + "\n");
+			serverGui.jta.append("Client's IP Address is " + inetAddress.getHostAddress() + "\n");
 		}
 
-		/*
-		 * The method that runs when the thread starts
+		/**
+		 * The method that runs when the thread starts - reads the input from
+		 * the client and checks if they are registered, if so calculates the
+		 * area of a circle from the given radius and sends it.
 		 */
 		public void run() {
 			try {
+				String threadId = Thread.currentThread().getName();
+				serverGui.jta.append("Thread Id: " + threadId + "\n");
 				while (true) {
-					// Receive radius from the client
-					double radius = inputFromClient.readDouble();
-					// Compute area
-					double area = radius * radius * Math.PI;
-					// Send area back to the client
-					outputToClient.writeDouble(area);
-					serverGui.jta.append("Radius received from client: " + radius + '\n');
-					serverGui.jta.append("Area found: " + area + '\n');
+					resultForClient = "";
+					int accountNumber = inputFromClient.readInt();
+					if (checkIfApplicantRegistered(accountNumber)) {
+						double radius = inputFromClient.readDouble();
+						double area = radius * radius * Math.PI;
+						resultForClient += "Welcome " + firstName + " " + lastName + "\n";
+						resultForClient += "Area is:" + String.valueOf(area);
+						System.out.println(resultForClient);
+					} else {
+						resultForClient += "Sorry - Registered Applicants only!";
+					}
+					sendToCient();
 				}
 			} catch (Exception e) {
-				System.err.println(e + " on " + socket);
+				System.out.println(e.getMessage());
 			}
 		}
+
+		/**
+		 * send the data to the client, as a byte array.
+		 * 
+		 * @throws UnsupportedEncodingException
+		 * @throws IOException
+		 */
+		private void sendToCient() throws UnsupportedEncodingException, IOException {
+			byte[] resultAsByteArray = resultForClient.getBytes("UTF-8");
+			this.outputToClient.writeInt(resultAsByteArray.length);
+			this.outputToClient.write(resultAsByteArray);
+			this.outputToClient.flush();
+		}
 	}
+	/**
+	 * Exit the app and close the db connection
+	 */
+	public void exit() {
+		try {
+			if (con != null)
+				con.close();
+			System.exit(0);
+		} catch (SQLException e) {
+			infoBox("Error Closing! - Please try again!", "Warning!");
+		}
+	}
+	/**
+	 * Info box to alert the user to different messages
+	 * 
+	 * @param infoMessage
+	 * @param titleBar
+	 */
+	private void infoBox(String infoMessage, String titleBar) {
+		JOptionPane.showMessageDialog(null, infoMessage, "InfoBox: " + titleBar, JOptionPane.INFORMATION_MESSAGE);
+	}
+
 }
